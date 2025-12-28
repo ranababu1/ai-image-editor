@@ -30,12 +30,14 @@ export async function POST(req) {
 
         const imageBuffer = Buffer.from(await file.arrayBuffer());
 
+        // Use Nano Banana for image generation
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.0-flash-exp"
+            model: "gemini-2.5-flash-image"
         });
 
+        // Generate new image based on the uploaded image and prompt
         const result = await model.generateContent([
-            prompt,
+            `Based on this image, ${prompt}`,
             {
                 inlineData: {
                     mimeType: file.type,

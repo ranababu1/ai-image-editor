@@ -89,7 +89,7 @@ export default function Page() {
 
           <textarea
             className="textarea textarea-bordered w-full"
-            placeholder="Describe the edit you want to make"
+            placeholder="Describe the image you want to create (e.g., 'a futuristic city with neon lights')"
             value={prompt}
             onChange={e => setPrompt(e.target.value)}
           />
