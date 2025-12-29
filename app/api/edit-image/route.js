@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/lib/auth";
 
 export const runtime = "nodejs";
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
-
 export async function POST(req) {
     try {
+        // Check authentication
+        const session = await getServerSession(authOptions);
+        if (!session) {
+            return NextResponse.json({ error: "Unauthorized. Please sign in." }, { status: 401 });
+        }
+
         const formData = await req.formData();
 
         const file = formData.get("image");
@@ -16,6 +22,7 @@ export async function POST(req) {
         const width = formData.get("width") ? parseInt(formData.get("width")) : null;
         const height = formData.get("height") ? parseInt(formData.get("height")) : null;
         const format = formData.get("format") || "webp";
+        const userApiKey = formData.get("apiKey");
 
         if (!file || !prompt) {
             return NextResponse.json({ error: "Missing input" }, { status: 400 });
@@ -29,6 +36,10 @@ export async function POST(req) {
         }
 
         const imageBuffer = Buffer.from(await file.arrayBuffer());
+
+        // Use user's API key if provided, otherwise use default
+        const apiKey = userApiKey || process.env.GOOGLE_API_KEY;
+        const genAI = new GoogleGenerativeAI(apiKey);
 
         // Use Nano Banana for image generation
         const model = genAI.getGenerativeModel({
