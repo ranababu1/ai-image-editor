@@ -148,9 +148,7 @@ export default function ControlPanel({ onClose, onSave }: ControlPanelProps) {
                                         </div>
                                         <label className="label">
                                             <span className="label-text-alt">🔒 Encrypted and stored locally</span>
-                                            <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="label-text-alt link link-primary">
-                                                Get API Key →
-                                            </a>
+                                            <span className="label-text-alt text-base-content/50">Get your own API key</span>
                                         </label>
                                     </div>
 

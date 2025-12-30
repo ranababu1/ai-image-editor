@@ -29,24 +29,54 @@ export function encryptData(data: any): string {
 
 export function decryptData(encryptedData: string): any {
     try {
+        if (!encryptedData) return null;
         const decoded = atob(encryptedData); // Base64 decode
         const decrypted = xorDecrypt(decoded, SECRET_KEY);
         return JSON.parse(decrypted);
     } catch (error) {
-        console.error("Decryption failed:", error);
+        // Silently return null for decryption errors (could be old unencrypted data)
         return null;
     }
 }
 
 export function setEncryptedItem(key: string, value: any): void {
-    const encrypted = encryptData(value);
-    localStorage.setItem(key, encrypted);
+    try {
+        const encrypted = encryptData(value);
+        if (encrypted) {
+            localStorage.setItem(key, encrypted);
+        }
+    } catch (error) {
+        console.error("Failed to save encrypted item:", error);
+    }
 }
 
 export function getEncryptedItem(key: string): any {
-    const encrypted = localStorage.getItem(key);
-    if (!encrypted) return null;
-    return decryptData(encrypted);
+    try {
+        const encrypted = localStorage.getItem(key);
+        if (!encrypted) return null;
+
+        // Try to decrypt
+        const decrypted = decryptData(encrypted);
+        if (decrypted !== null) {
+            return decrypted;
+        }
+
+        // If decryption failed, it might be old plain JSON data
+        // Try to parse it directly and re-save as encrypted
+        try {
+            const plainData = JSON.parse(encrypted);
+            // Re-save as encrypted for next time
+            setEncryptedItem(key, plainData);
+            return plainData;
+        } catch {
+            // Not valid JSON either, remove corrupt data
+            localStorage.removeItem(key);
+            return null;
+        }
+    } catch (error) {
+        // If all else fails, return null
+        return null;
+    }
 }
 
 export function removeEncryptedItem(key: string): void {

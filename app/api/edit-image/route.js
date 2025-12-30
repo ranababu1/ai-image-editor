@@ -39,6 +39,14 @@ export async function POST(req) {
 
         // Use user's API key if provided, otherwise use default
         const apiKey = userApiKey || process.env.GOOGLE_API_KEY;
+
+        if (!apiKey) {
+            return NextResponse.json(
+                { error: "No API key provided. Please add your Google Gemini API key in Settings." },
+                { status: 400 }
+            );
+        }
+
         const genAI = new GoogleGenerativeAI(apiKey);
 
         // Use Nano Banana for image generation

@@ -53,19 +53,26 @@ export async function POST(req: Request) {
         quotaStore[key] = { count: 0, date: today };
     }
 
-    const { customLimit } = await req.json();
+    const { customLimit, increment } = await req.json();
     const limit = customLimit || 5;
 
-    // Check if quota exceeded
+    // If increment is true, increment the quota (only after successful generation)
+    if (increment) {
+        quotaStore[key].count += 1;
+        return NextResponse.json({
+            used: quotaStore[key].count,
+            limit: limit,
+            remaining: Math.max(0, limit - quotaStore[key].count),
+        });
+    }
+
+    // Otherwise, just check if quota would be exceeded
     if (quotaStore[key].count >= limit) {
         return NextResponse.json(
             { error: "Daily quota exceeded", used: quotaStore[key].count, limit },
             { status: 429 }
         );
     }
-
-    // Increment quota
-    quotaStore[key].count += 1;
 
     return NextResponse.json({
         used: quotaStore[key].count,

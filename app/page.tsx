@@ -5,6 +5,7 @@ import { useSession, signIn, signOut } from "next-auth/react";
 import ControlPanel from "./components/ControlPanel";
 import Toast, { ToastType } from "./components/Toast";
 import Navigation from "./components/Navigation";
+import Footer from "./components/Footer";
 import { getEncryptedItem, setEncryptedItem } from "./lib/encryption";
 
 interface SizePreset {
@@ -121,12 +122,12 @@ export default function Page() {
       return;
     }
 
-    // Check quota before making request
+    // Check quota before making request (don't increment yet)
     const customLimit = getEncryptedItem("dailyLimit") || 5;
     const quotaRes = await fetch("/api/quota", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ customLimit }),
+      body: JSON.stringify({ customLimit, increment: false }),
     });
 
     const quotaData = await quotaRes.json();
@@ -138,9 +139,6 @@ export default function Page() {
       );
       return;
     }
-
-    setQuotaUsed(quotaData.used);
-    setQuotaLimit(quotaData.limit);
 
     setLoading(true);
 
@@ -189,6 +187,16 @@ export default function Page() {
           showToast("Error: " + data.error, "error");
         }
       } else if (data.image) {
+        // SUCCESS! Now increment the quota
+        await fetch("/api/quota", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ customLimit, increment: true }),
+        });
+
+        // Fetch updated quota
+        await fetchQuota();
+
         setAfter(`data:image/${format};base64,${data.image}`);
         showToast("Image generated successfully! 🎨", "success");
       }
@@ -403,6 +411,8 @@ export default function Page() {
           </button>
         </div>
       </div>
+
+      <Footer />
 
       {showControlPanel && (
         <ControlPanel
