@@ -3,11 +3,19 @@
 import { useState, useEffect } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 import ControlPanel from "./components/ControlPanel";
+import Toast, { ToastType } from "./components/Toast";
+import Navigation from "./components/Navigation";
+import { getEncryptedItem, setEncryptedItem } from "./lib/encryption";
 
 interface SizePreset {
   name: string;
   width: number;
   height: number;
+}
+
+interface ToastMessage {
+  message: string;
+  type: ToastType;
 }
 
 export default function Page() {
@@ -25,19 +33,24 @@ export default function Page() {
   const [quotaUsed, setQuotaUsed] = useState(0);
   const [quotaLimit, setQuotaLimit] = useState(5);
   const [sizePresets, setSizePresets] = useState<SizePreset[]>([]);
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+
+  const showToast = (message: string, type: ToastType = "info") => {
+    setToast({ message, type });
+  };
+
+  const closeToast = () => {
+    setToast(null);
+  };
 
   useEffect(() => {
-    // Load presets from localStorage
-    const savedPresets = localStorage.getItem("sizePresets");
-    if (savedPresets) {
-      setSizePresets(JSON.parse(savedPresets));
-    }
+    // Load presets from encrypted localStorage
+    const savedPresets = getEncryptedItem("sizePresets") || [];
+    setSizePresets(savedPresets);
 
-    // Load daily limit
-    const savedLimit = localStorage.getItem("dailyLimit");
-    if (savedLimit) {
-      setQuotaLimit(parseInt(savedLimit));
-    }
+    // Load daily limit from encrypted localStorage
+    const savedLimit = getEncryptedItem("dailyLimit") || 5;
+    setQuotaLimit(savedLimit);
   }, []);
 
   useEffect(() => {
@@ -48,7 +61,7 @@ export default function Page() {
 
   const fetchQuota = async () => {
     try {
-      const customLimit = localStorage.getItem("dailyLimit") || "5";
+      const customLimit = getEncryptedItem("dailyLimit") || 5;
       const res = await fetch(`/api/quota?customLimit=${customLimit}`);
       const data = await res.json();
       if (data.used !== undefined) {
@@ -57,6 +70,7 @@ export default function Page() {
       }
     } catch (error) {
       console.error("Failed to fetch quota:", error);
+      showToast("Failed to fetch quota information", "error");
     }
   };
 
@@ -65,6 +79,7 @@ export default function Page() {
     setFile(selectedFile);
     if (selectedFile) {
       setBefore(URL.createObjectURL(selectedFile));
+      setAfter(null); // Clear previous result
     } else {
       setBefore(null);
     }
@@ -75,10 +90,11 @@ export default function Page() {
 
     const link = document.createElement("a");
     link.href = after;
-    link.download = `edited-image-${Date.now()}.${format}`;
+    link.download = `intelligent-editor-${Date.now()}.${format}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    showToast("Image downloaded successfully!", "success");
   };
 
   const handlePresetChange = (value: string) => {
@@ -95,25 +111,31 @@ export default function Page() {
   };
 
   const submit = async () => {
-    if (!file || !prompt) return;
+    if (!file || !prompt) {
+      showToast("Please upload an image and enter a prompt", "warning");
+      return;
+    }
 
     if (file.size > 2 * 1024 * 1024) {
-      alert("Image must be under 2MB");
+      showToast("Image must be under 2MB. Please upload a smaller file.", "error");
       return;
     }
 
     // Check quota before making request
-    const customLimit = localStorage.getItem("dailyLimit") || "5";
+    const customLimit = getEncryptedItem("dailyLimit") || 5;
     const quotaRes = await fetch("/api/quota", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ customLimit: parseInt(customLimit) }),
+      body: JSON.stringify({ customLimit }),
     });
 
     const quotaData = await quotaRes.json();
 
     if (!quotaRes.ok) {
-      alert(`Quota exceeded! You've used ${quotaData.used}/${quotaData.limit} generations today. Try again tomorrow.`);
+      showToast(
+        `Daily quota exceeded! You've used ${quotaData.used}/${quotaData.limit} generations today. Reset at midnight or add your own API key in Settings.`,
+        "error"
+      );
       return;
     }
 
@@ -138,7 +160,7 @@ export default function Page() {
     form.append("format", format);
 
     // Use custom API key if provided
-    const userApiKey = localStorage.getItem("userApiKey");
+    const userApiKey = getEncryptedItem("userApiKey");
     if (userApiKey) {
       form.append("apiKey", userApiKey);
     }
@@ -152,15 +174,41 @@ export default function Page() {
       const data = await res.json();
 
       if (data.error) {
-        alert(`Error: ${data.error}`);
+        // API error handling with specific messages
+        if (data.error.includes("API key") || data.error.includes("api_key")) {
+          showToast(
+            "API Key issue: " + data.error + ". Please check your API key in Settings.",
+            "error"
+          );
+        } else if (data.error.includes("quota") || data.error.includes("limit")) {
+          showToast(
+            "API quota exceeded: " + data.error + ". Try using your own API key in Settings for unlimited access.",
+            "error"
+          );
+        } else {
+          showToast("Error: " + data.error, "error");
+        }
       } else if (data.image) {
         setAfter(`data:image/${format};base64,${data.image}`);
+        showToast("Image generated successfully! 🎨", "success");
       }
     } catch (error) {
-      alert("Failed to process image. Please try again.");
+      showToast(
+        "Network error: Failed to connect to the server. Please check your connection and try again.",
+        "error"
+      );
     }
 
     setLoading(false);
+  };
+
+  const handleControlPanelSave = (message: string) => {
+    showToast(message, "success");
+    // Reload presets and limit
+    const savedPresets = getEncryptedItem("sizePresets") || [];
+    setSizePresets(savedPresets);
+    const savedLimit = getEncryptedItem("dailyLimit") || 5;
+    setQuotaLimit(savedLimit);
   };
 
   // Show loading while checking session
@@ -206,8 +254,10 @@ export default function Page() {
   }
 
   return (
-    <div className="min-h-screen bg-base-200 p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <div className="min-h-screen bg-gradient-to-br from-base-200 to-base-300">
+      <Navigation />
+
+      <div className="max-w-7xl mx-auto px-6 pb-12 space-y-6">
         {/* Header with User Info */}
         <div className="flex justify-between items-center">
           <div>
@@ -233,28 +283,51 @@ export default function Page() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-6">
-          <div className="card bg-base-100 p-4 min-h-[300px] relative">
-            {before ? <img src={before} alt="Before" className="w-full h-full object-contain" /> : <div className="flex items-center justify-center h-full text-gray-500">Before</div>}
+        {/* Image Preview Section */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="card bg-base-100 p-4 min-h-[300px] relative shadow-xl">
+            {before ? (
+              <img src={before} alt="Before" className="w-full h-full object-contain rounded-lg" />
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-500">
+                <div className="text-center">
+                  <svg className="w-16 h-16 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <p>Before</p>
+                </div>
+              </div>
+            )}
           </div>
-          <div className="card bg-base-100 p-4 min-h-[300px] relative">
+          <div className="card bg-base-100 p-4 min-h-[300px] relative shadow-xl">
             {after ? (
               <>
-                <img src={after} alt="After" className="w-full h-full object-contain" />
+                <img src={after} alt="After" className="w-full h-full object-contain rounded-lg" />
                 <button
-                  className="btn btn-sm btn-primary absolute top-4 right-4"
+                  className="btn btn-primary btn-sm absolute top-6 right-6 gap-2"
                   onClick={handleDownload}
                 >
-                  ⬇️ Download
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download
                 </button>
               </>
             ) : (
-              <div className="flex items-center justify-center h-full text-gray-500">After</div>
+              <div className="flex items-center justify-center h-full text-gray-500">
+                <div className="text-center">
+                  <svg className="w-16 h-16 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                  <p>After</p>
+                </div>
+              </div>
             )}
           </div>
         </div>
 
-        <div className="card bg-base-100 p-6 space-y-4">
+        {/* Control Form */}
+        <div className="card bg-base-100 p-6 space-y-4 shadow-xl">
           <input
             type="file"
             accept="image/*"
@@ -263,7 +336,7 @@ export default function Page() {
           />
 
           <textarea
-            className="textarea textarea-bordered w-full"
+            className="textarea textarea-bordered w-full h-24"
             placeholder="Describe the image you want to create (e.g., 'a futuristic city with neon lights')"
             value={prompt}
             onChange={e => setPrompt(e.target.value)}
@@ -271,7 +344,7 @@ export default function Page() {
 
           <div className="flex gap-4 flex-wrap">
             <select
-              className="select select-bordered"
+              className="select select-bordered flex-1 min-w-[200px]"
               value={resizeOption}
               onChange={e => handlePresetChange(e.target.value)}
             >
@@ -288,14 +361,14 @@ export default function Page() {
               <>
                 <input
                   type="number"
-                  className="input input-bordered"
+                  className="input input-bordered w-32"
                   placeholder="Width"
                   value={width}
                   onChange={e => setWidth(Number(e.target.value))}
                 />
                 <input
                   type="number"
-                  className="input input-bordered"
+                  className="input input-bordered w-32"
                   placeholder="Height"
                   value={height}
                   onChange={e => setHeight(Number(e.target.value))}
@@ -315,17 +388,35 @@ export default function Page() {
           </div>
 
           <button
-            className={`btn btn-primary ${loading ? "loading" : ""}`}
+            className={`btn btn-primary w-full ${loading ? "loading" : ""}`}
             onClick={submit}
             disabled={loading || quotaUsed >= quotaLimit}
           >
-            {loading ? "Generating..." : `Generate (${quotaUsed}/${quotaLimit} used)`}
+            {loading ? (
+              <>
+                <span className="loading loading-spinner"></span>
+                Generating...
+              </>
+            ) : (
+              `Generate (${quotaUsed}/${quotaLimit} used)`
+            )}
           </button>
         </div>
       </div>
 
       {showControlPanel && (
-        <ControlPanel onClose={() => setShowControlPanel(false)} />
+        <ControlPanel
+          onClose={() => setShowControlPanel(false)}
+          onSave={handleControlPanelSave}
+        />
+      )}
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={closeToast}
+        />
       )}
     </div>
   );
