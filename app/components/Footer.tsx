@@ -13,7 +13,7 @@ export default function Footer() {
             </div>
             <div>
                 <p className="text-xs opacity-60">
-                    © {currentYear} Intelligent Editor. Built with Next.js, Google Gemini AI & ❤️
+                    © {currentYear} Intelligent Editor. Powered by AI
                 </p>
             </div>
         </footer>
