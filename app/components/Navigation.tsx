@@ -3,11 +3,11 @@
 import { useState } from "react";
 
 const tools = [
-    { name: "Web Asset Audit", href: "#web-asset-audit" },
-    { name: "Image Optimizer", href: "#image-optimizer" },
-    { name: "Web Crawler", href: "#web-crawler" },
-    { name: "Sitemap Builder", href: "#sitemap-builder" },
-    { name: "Free AB Test Tool", href: "#ab-test-tool" },
+    { name: "Web Asset Audit", href: "https://audit.imrn.dev/?ref=aieditor" },
+    { name: "Image Optimizer", href: "https://pixfix.imrn.dev/?ref=aieditor" },
+    { name: "Web Crawler", href: "https://crawler.imrn.dev/?ref=aieditor" },
+    { name: "Sitemap Builder", href: "https://crawler.imrn.dev/?ref=aieditor" },
+    { name: "Free AB Test Tool", href: "https://www.freeabtest.com/?ref=aieditor" },
     { name: "CookieShield", href: "#cookie-shield" },
 ];
 
