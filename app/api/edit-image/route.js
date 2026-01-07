@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import sharp from "sharp";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/lib/auth";
@@ -37,60 +36,62 @@ export async function POST(req) {
 
         const imageBuffer = Buffer.from(await file.arrayBuffer());
 
-        // Use user's API key if provided, otherwise use default
-        const apiKey = userApiKey || process.env.GOOGLE_API_KEY;
-
-        if (!apiKey) {
+        // Use Gemini 2.0 Flash Preview for image generation
+        if (!process.env.GOOGLE_API_KEY) {
             return NextResponse.json(
-                { error: "No API key provided. Please add your Google Gemini API key in Settings." },
-                { status: 400 }
-            );
-        }
-
-        const genAI = new GoogleGenerativeAI(apiKey);
-
-        // Use Nano Banana for image generation
-        const model = genAI.getGenerativeModel({
-            model: "gemini-2.5-flash-image"
-        });
-
-        // Generate new image based on the uploaded image and prompt
-        const result = await model.generateContent([
-            `Based on this image, ${prompt}`,
-            {
-                inlineData: {
-                    mimeType: file.type,
-                    data: imageBuffer.toString("base64")
-                }
-            }
-        ]);
-
-        console.log("API Response:", JSON.stringify(result.response, null, 2));
-
-        // Check if response contains image data
-        if (!result.response.candidates || !result.response.candidates[0]) {
-            return NextResponse.json(
-                { error: "No response from AI model" },
+                { error: "GOOGLE_API_KEY not configured" },
                 { status: 500 }
             );
         }
 
-        const imagePart = result.response.candidates[0].content.parts.find(p => p.inlineData);
+        const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
+        const model = genAI.getGenerativeModel({ model: "gemini-3-pro-image" });
 
-        if (!imagePart) {
-            return NextResponse.json(
-                {
-                    error: "Gemini API does not support image editing. It only analyzes images and generates text. Please use DALL-E, Stable Diffusion, or another image editing API instead.",
-                    aiResponse: result.response.candidates[0].content.parts[0].text
+        // Convert image to base64 for Gemini
+        const base64Image = imageBuffer.toString("base64");
+        const mimeType = file.type || "image/jpeg";
+
+        // Generate image with prompt
+        const result = await model.generateContent([
+            {
+                inlineData: {
+                    mimeType: mimeType,
+                    data: base64Image,
                 },
-                { status: 400 }
+            },
+            prompt,
+        ]);
+
+        const response = await result.response;
+        
+        // Extract the generated image from response
+        if (!response.candidates || !response.candidates[0]) {
+            return NextResponse.json(
+                { error: "No image generated" },
+                { status: 500 }
             );
         }
 
-        const editedBuffer = Buffer.from(
-            imagePart.inlineData.data,
-            "base64"
-        );
+        const candidate = response.candidates[0];
+        let editedBuffer;
+
+        // Check if the response contains an image
+        if (candidate.content && candidate.content.parts) {
+            const imagePart = candidate.content.parts.find(part => part.inlineData);
+            if (imagePart && imagePart.inlineData) {
+                editedBuffer = Buffer.from(imagePart.inlineData.data, "base64");
+            } else {
+                return NextResponse.json(
+                    { error: "No image data in response" },
+                    { status: 500 }
+                );
+            }
+        } else {
+            return NextResponse.json(
+                { error: "Invalid response format" },
+                { status: 500 }
+            );
+        }
 
         let img = sharp(editedBuffer);
 
